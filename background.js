@@ -5,7 +5,7 @@
 'use strict';
 
 chrome.runtime.onInstalled.addListener(function() {
-    chrome.storage.sync.set({refreshTabs: []}, function() {
+    chrome.storage.sync.set({refreshTabs: {}}, function() {
     });
 
     chrome.declarativeContent.onPageChanged.removeRules(undefined, function() {
@@ -20,15 +20,37 @@ chrome.runtime.onInstalled.addListener(function() {
     });
 
     chrome.alarms.onAlarm.addListener(function() {
-        console.log('Alarm fired');
         chrome.storage.sync.get('refreshInterval', function(data) {
-            console.log('Get data', data);
+            let now = new Date().getTime();
+
+            let changed = false;
+            let tabs = data['refreshInterval'];
+            for (var i in tabs) {
+                let tab = tabs[i];
+
+                if (tab.nextTime < now) {
+                    changed = true;
+
+                    chrome.tabs.reload(tab.tabId);
+                    tab.nextTime = now + tab.intervalInSec * 1000;
+
+                    console.log('Next reload time is ', tab.nextTime)
+
+                    tabs[i] = tab;
+                }
+            }
+
+            if (changed) {
+                data['refreshInterval'] = tabs;
+
+                chrome.storage.sync.set(data, function() {});
+            }
         });
     });
 
     chrome.tabs.onActivated.addListener(function(activeInfo) {
         chrome.storage.sync.get('refreshInterval', function(data) {
-            if (data['tab_' + activeInfo.tabId]) {
+            if (data['refreshInterval']['tab_' + activeInfo.tabId]) {
                 chrome.browserAction.setBadgeText({text: 'ON'});
             } else {
                 chrome.browserAction.setBadgeText({});
@@ -41,5 +63,8 @@ chrome.runtime.onInstalled.addListener(function() {
             delete data['tab_' + tabId];
         });
     });
+
+    // TODO don't set alarm if we don't have timers
+    chrome.alarms.create('nextRefresh', {periodInMinutes: 1.0});
 });
 
